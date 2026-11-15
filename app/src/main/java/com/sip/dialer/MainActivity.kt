@@ -5,7 +5,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.ContactsContract
 import android.view.HapticFeedbackConstants
 import android.view.View
@@ -14,6 +17,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import org.json.JSONArray
+import org.json.JSONObject
 import org.linphone.core.*
 import java.io.File
 import java.text.SimpleDateFormat
@@ -25,15 +30,29 @@ class MainActivity : AppCompatActivity() {
     private var currentCall: Call? = null
     private var isRecording = false
 
+    // Proximity Sensor WakeLock
     private var proximityWakeLock: PowerManager.WakeLock? = null
 
+    // Live Call Timer
+    private val timerHandler = Handler(Looper.getMainLooper())
+    private var callStartTimeMillis = 0L
+    private var isTimerRunning = false
+    private var lastFormattedDuration = "00:00"
+
+    // Call History Tracking
+    private var activeCallNumber = ""
+    private var activeCallType = "Outgoing"
+
+    // Quality tracking variables
     private var lastQualityRating = 0f
     private var lastPacketLoss = 0f
     private var lastJitter = 0f
     private var lastDelay = 0f
     private var lastCodec = "Unknown"
 
+    // UI Elements
     private lateinit var tvStatus: TextView
+    private lateinit var btnRecentCalls: Button
     private lateinit var btnToggleAccount: Button
     private lateinit var layoutLoginCard: LinearLayout
     private lateinit var etUsername: EditText
@@ -47,10 +66,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnCall: Button
     private lateinit var layoutInCall: LinearLayout
     private lateinit var tvCallState: TextView
+    private lateinit var tvCallTimer: TextView
     private lateinit var btnMute: Button
     private lateinit var btnSpeaker: Button
     private lateinit var btnRecord: Button
     private lateinit var btnHangup: Button
+
+    private val timerRunnable = object : Runnable {
+        override fun run() {
+            if (isTimerRunning) {
+                val elapsedSec = (SystemClock.elapsedRealtime() - callStartTimeMillis) / 1000
+                val mins = elapsedSec / 60
+                val secs = elapsedSec % 60
+                lastFormattedDuration = String.format(Locale.US, "%02d:%02d", mins, secs)
+                tvCallTimer.text = "⏱ $lastFormattedDuration"
+                timerHandler.postDelayed(this, 1000)
+            }
+        }
+    }
 
     private val pickContactLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -117,34 +150,53 @@ class MainActivity : AppCompatActivity() {
                 when (state) {
                     Call.State.OutgoingInit, Call.State.OutgoingProgress, Call.State.OutgoingRinging -> {
                         currentCall = call
+                        activeCallNumber = call.remoteAddress.username ?: call.remoteAddress.asStringUriOnly()
+                        activeCallType = "Outgoing"
+                        lastFormattedDuration = "00:00"
                         layoutInCall.visibility = View.VISIBLE
-                        tvCallState.text = "Calling ${call.remoteAddress.username ?: call.remoteAddress.asStringUriOnly()}..."
+                        tvCallState.text = "📞 Calling $activeCallNumber..."
+                        tvCallTimer.text = "⏱ Ringing..."
                         enableProximitySensor(true)
                     }
                     Call.State.IncomingReceived -> {
                         currentCall = call
+                        activeCallNumber = call.remoteAddress.username ?: call.remoteAddress.asStringUriOnly()
+                        activeCallType = "Incoming"
+                        lastFormattedDuration = "00:00"
                         showIncomingCallDialog(call)
                     }
                     Call.State.Connected, Call.State.StreamsRunning -> {
                         currentCall = call
                         layoutInCall.visibility = View.VISIBLE
-                        tvCallState.text = "Connected: ${call.remoteAddress.username ?: "Active Call"}"
+                        tvCallState.text = "🟢 Connected: $activeCallNumber"
+                        startCallTimer()
                         enableProximitySensor(true)
                         captureCallMetrics(call)
                     }
                     Call.State.End, Call.State.Released -> {
+                        stopCallTimer()
                         enableProximitySensor(false)
                         if (isRecording) {
                             call.stopRecording()
                             isRecording = false
-                            btnRecord.text = "Record"
+                            btnRecord.text = "⏺ Record"
+                        }
+                        if (activeCallNumber.isNotEmpty()) {
+                            val finalType = if (lastFormattedDuration == "00:00" && activeCallType == "Incoming") "Missed" else activeCallType
+                            saveCallToHistory(activeCallNumber, finalType, lastFormattedDuration)
+                            activeCallNumber = ""
                         }
                         layoutInCall.visibility = View.GONE
                         currentCall = null
                         showCallQualitySummary()
                     }
                     Call.State.Error -> {
+                        stopCallTimer()
                         enableProximitySensor(false)
+                        if (activeCallNumber.isNotEmpty()) {
+                            saveCallToHistory(activeCallNumber, "Failed", "00:00")
+                            activeCallNumber = ""
+                        }
                         layoutInCall.visibility = View.GONE
                         currentCall = null
                         Toast.makeText(this@MainActivity, "Call Error: $message", Toast.LENGTH_LONG).show()
@@ -174,6 +226,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun initViews() {
         tvStatus = findViewById(R.id.tvStatus)
+        btnRecentCalls = findViewById(R.id.btnRecentCalls)
         btnToggleAccount = findViewById(R.id.btnToggleAccount)
         layoutLoginCard = findViewById(R.id.layoutLoginCard)
         etUsername = findViewById(R.id.etUsername)
@@ -187,6 +240,7 @@ class MainActivity : AppCompatActivity() {
         btnCall = findViewById(R.id.btnCall)
         layoutInCall = findViewById(R.id.layoutInCall)
         tvCallState = findViewById(R.id.tvCallState)
+        tvCallTimer = findViewById(R.id.tvCallTimer)
         btnMute = findViewById(R.id.btnMute)
         btnSpeaker = findViewById(R.id.btnSpeaker)
         btnRecord = findViewById(R.id.btnRecord)
@@ -195,6 +249,19 @@ class MainActivity : AppCompatActivity() {
         val transports = arrayOf("UDP", "TCP", "TLS")
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, transports)
         spinnerTransport.adapter = adapter
+    }
+
+    private fun startCallTimer() {
+        if (!isTimerRunning) {
+            callStartTimeMillis = SystemClock.elapsedRealtime()
+            isTimerRunning = true
+            timerHandler.post(timerRunnable)
+        }
+    }
+
+    private fun stopCallTimer() {
+        isTimerRunning = false
+        timerHandler.removeCallbacks(timerRunnable)
     }
 
     private fun setupProximitySensor() {
@@ -253,6 +320,71 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun saveCallToHistory(number: String, type: String, duration: String) {
+        val prefs = getSharedPreferences("SipPrefs", Context.MODE_PRIVATE)
+        val historyJson = prefs.getString("call_history", "[]") ?: "[]"
+        val jsonArray = JSONArray(historyJson)
+
+        val timeStr = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault()).format(Date())
+        val entry = JSONObject().apply {
+            put("number", number)
+            put("type", type)
+            put("duration", duration)
+            put("time", timeStr)
+        }
+
+        val updatedArray = JSONArray()
+        updatedArray.put(entry)
+        for (i in 0 until minOf(jsonArray.length(), 29)) {
+            updatedArray.put(jsonArray.getJSONObject(i))
+        }
+
+        prefs.edit().putString("call_history", updatedArray.toString()).apply()
+    }
+
+    private fun showRecentCallsDialog() {
+        val prefs = getSharedPreferences("SipPrefs", Context.MODE_PRIVATE)
+        val historyJson = prefs.getString("call_history", "[]") ?: "[]"
+        val jsonArray = JSONArray(historyJson)
+
+        if (jsonArray.length() == 0) {
+            Toast.makeText(this, "No recent calls yet!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val displayItems = Array(jsonArray.length()) { i ->
+            val obj = jsonArray.getJSONObject(i)
+            val icon = when (obj.getString("type")) {
+                "Outgoing" -> "📤"
+                "Incoming" -> "📥"
+                "Missed" -> "❌"
+                else -> "⚠️"
+            }
+            val num = obj.getString("number")
+            val dur = obj.getString("duration")
+            val time = obj.getString("time")
+            "$icon  $num  (⏱ $dur)\n      🕒 $time"
+        }
+
+        val numbers = Array(jsonArray.length()) { i ->
+            jsonArray.getJSONObject(i).getString("number")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("🕒 Recent Calls (Tap to Call)")
+            .setItems(displayItems) { _, which ->
+                val selectedNumber = numbers[which]
+                etDialNumber.setText(selectedNumber)
+                makeCall(selectedNumber)
+            }
+            .setNeutralButton("Clear History") { _, _ ->
+                prefs.edit().remove("call_history").apply()
+                Toast.makeText(this, "Call history cleared", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
     private fun loadSavedCredentialsAndAutoLogin() {
         val prefs = getSharedPreferences("SipPrefs", Context.MODE_PRIVATE)
         val savedUser = prefs.getString("username", "") ?: ""
@@ -302,6 +434,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
+        btnRecentCalls.setOnClickListener {
+            showRecentCallsDialog()
+        }
+
         btnToggleAccount.setOnClickListener {
             layoutLoginCard.visibility =
                 if (layoutLoginCard.visibility == View.VISIBLE) View.GONE else View.VISIBLE
@@ -341,7 +477,7 @@ class MainActivity : AppCompatActivity() {
 
         btnMute.setOnClickListener {
             core.isMicEnabled = !core.isMicEnabled
-            btnMute.text = if (core.isMicEnabled) "Mute" else "Unmute"
+            btnMute.text = if (core.isMicEnabled) "🔇 Mute" else "🎙️ Unmute"
         }
 
         btnSpeaker.setOnClickListener {
@@ -352,11 +488,11 @@ class MainActivity : AppCompatActivity() {
 
             if (currentDevice?.type == AudioDevice.Type.Speaker && earpiece != null) {
                 core.outputAudioDevice = earpiece
-                btnSpeaker.text = "Speaker"
+                btnSpeaker.text = "🔊 Speaker"
                 enableProximitySensor(true)
             } else if (speaker != null) {
                 core.outputAudioDevice = speaker
-                btnSpeaker.text = "Earpiece"
+                btnSpeaker.text = "📱 Earpiece"
                 enableProximitySensor(false)
             }
         }
@@ -366,12 +502,12 @@ class MainActivity : AppCompatActivity() {
             if (!isRecording) {
                 call.startRecording()
                 isRecording = true
-                btnRecord.text = "Stop Rec"
+                btnRecord.text = "⏹ Stop"
                 Toast.makeText(this, "Recording started...", Toast.LENGTH_SHORT).show()
             } else {
                 call.stopRecording()
                 isRecording = false
-                btnRecord.text = "Record"
+                btnRecord.text = "⏺ Record"
                 Toast.makeText(this, "Recording saved!", Toast.LENGTH_SHORT).show()
             }
         }
@@ -433,16 +569,16 @@ class MainActivity : AppCompatActivity() {
     private fun showIncomingCallDialog(call: Call) {
         val caller = call.remoteAddress.username ?: call.remoteAddress.asStringUriOnly()
         AlertDialog.Builder(this)
-            .setTitle("Incoming SIP Call")
-            .setMessage("Call from: $caller")
-            .setPositiveButton("Answer") { _, _ ->
+            .setTitle("📲 Incoming SIP Call")
+            .setMessage("Caller: $caller")
+            .setPositiveButton("✅ Answer") { _, _ ->
                 val params = core.createCallParams(call)
                 val recordDir = getExternalFilesDir("Recordings")
                 val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
                 params?.recordFile = File(recordDir, "InCall_$timestamp.wav").absolutePath
                 call.acceptWithParams(params)
             }
-            .setNegativeButton("Decline") { _, _ ->
+            .setNegativeButton("❌ Decline") { _, _ ->
                 call.decline(Reason.Declined)
             }
             .setCancelable(false)
@@ -463,34 +599,37 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCallQualitySummary() {
-        val qualityLabel = when {
-            lastQualityRating >= 4.0f -> "Excellent"
-            lastQualityRating >= 3.0f -> "Good"
-            lastQualityRating >= 2.0f -> "Fair"
-            lastQualityRating > 0f -> "Poor"
-            else -> "N/A (Call too short)"
+        val (qualityEmoji, qualityLabel) = when {
+            lastQualityRating >= 4.0f -> "🌟" to "Excellent"
+            lastQualityRating >= 3.0f -> "✅" to "Good"
+            lastQualityRating >= 2.0f -> "⚠️" to "Fair"
+            lastQualityRating > 0f -> "🔴" to "Poor"
+            else -> "ℹ️" to "N/A (Short Call)"
         }
 
         val summary = """
-            Quality Score (MOS): ${String.format(Locale.US, "%.2f", lastQualityRating)} / 5.0 ($qualityLabel)
-            Packet Loss: ${String.format(Locale.US, "%.2f", lastPacketLoss)}%
-            Jitter Buffer: ${String.format(Locale.US, "%.1f", lastJitter)} ms
-            Round-Trip Delay: ${String.format(Locale.US, "%.0f", lastDelay)} ms
-            Audio Codec: $lastCodec
-            
-            Recordings saved in:
+            ⏱️ Call Duration: $lastFormattedDuration
+            ────────────────────────
+            $qualityEmoji Quality (MOS): ${String.format(Locale.US, "%.2f", lastQualityRating)} / 5.0 ($qualityLabel)
+            📉 Packet Loss: ${String.format(Locale.US, "%.2f", lastPacketLoss)}%
+            📶 Jitter Buffer: ${String.format(Locale.US, "%.1f", lastJitter)} ms
+            ⚡ Latency / Delay: ${String.format(Locale.US, "%.0f", lastDelay)} ms
+            🎙️ Audio Codec: $lastCodec
+            ────────────────────────
+            📁 Recordings Folder:
             Android/data/com.sip.dialer/files/Recordings/
         """.trimIndent()
 
         AlertDialog.Builder(this)
-            .setTitle("Call Ended - Quality Report")
+            .setTitle("📊 Call Summary & Quality")
             .setMessage(summary)
-            .setPositiveButton("OK", null)
+            .setPositiveButton("👍 OK", null)
             .show()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        stopCallTimer()
         enableProximitySensor(false)
         core.removeListener(coreListener)
         core.stop()

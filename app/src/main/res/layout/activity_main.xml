@@ -25,17 +25,27 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Status: Not Registered"
+                android:text="● Not Registered"
                 android:textColor="#FF5252"
                 android:textSize="14sp"
                 android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnRecentCalls"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#26A69A"
+                android:text="🕒 Recent"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp" />
 
             <Button
                 android:id="@+id/btnToggleAccount"
                 android:layout_width="wrap_content"
                 android:layout_height="36dp"
                 android:backgroundTint="#37474F"
-                android:text="Account"
+                android:text="⚙️ Account"
                 android:textColor="#FFFFFF"
                 android:textSize="11sp" />
         </LinearLayout>
@@ -106,7 +116,7 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="16dp"
             android:background="#26000000"
             android:gravity="center_vertical"
             android:orientation="horizontal"
@@ -143,7 +153,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:layout_marginTop="14dp"
+            android:layout_marginTop="12dp"
             android:columnCount="3"
             android:rowCount="4">
 
@@ -179,7 +189,7 @@
                 android:layout_marginEnd="8dp"
                 android:layout_weight="1"
                 android:backgroundTint="#455A64"
-                android:text="Contacts"
+                android:text="📇 Contacts"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold" />
 
@@ -190,19 +200,19 @@
                 android:layout_marginStart="8dp"
                 android:layout_weight="1.5"
                 android:backgroundTint="#00C853"
-                android:text="CALL"
+                android:text="📞 CALL"
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- In-Call Controls Panel -->
+        <!-- In-Call Controls Panel with Live Timer -->
         <LinearLayout
             android:id="@+id/layoutInCall"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:background="#CC102027"
+            android:background="#DD102027"
             android:orientation="vertical"
             android:padding="14dp"
             android:visibility="gone">
@@ -217,6 +227,17 @@
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:id="@+id/tvCallTimer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center"
+                android:text="⏱ 00:00"
+                android:textColor="#FFD740"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -229,7 +250,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:backgroundTint="#37474F"
-                    android:text="Mute"
+                    android:text="🔇 Mute"
                     android:textColor="#FFFFFF"
                     android:textSize="12sp" />
 
@@ -240,7 +261,7 @@
                     android:layout_marginHorizontal="6dp"
                     android:layout_weight="1"
                     android:backgroundTint="#37474F"
-                    android:text="Speaker"
+                    android:text="🔊 Speaker"
                     android:textColor="#FFFFFF"
                     android:textSize="12sp" />
 
@@ -250,7 +271,7 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:backgroundTint="#37474F"
-                    android:text="Record"
+                    android:text="⏺ Record"
                     android:textColor="#FFFFFF"
                     android:textSize="12sp" />
             </LinearLayout>
@@ -261,7 +282,7 @@
                 android:layout_height="50dp"
                 android:layout_marginTop="10dp"
                 android:backgroundTint="#D50000"
-                android:text="END CALL"
+                android:text="📵 END CALL"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold" />
         </LinearLayout>

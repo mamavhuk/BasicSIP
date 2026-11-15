@@ -25,17 +25,14 @@ class MainActivity : AppCompatActivity() {
     private var currentCall: Call? = null
     private var isRecording = false
 
-    // Proximity Sensor WakeLock (Screen off near ear)
     private var proximityWakeLock: PowerManager.WakeLock? = null
 
-    // Quality tracking variables
     private var lastQualityRating = 0f
     private var lastPacketLoss = 0f
     private var lastJitter = 0f
     private var lastDelay = 0f
     private var lastCodec = "Unknown"
 
-    // UI Elements
     private lateinit var tvStatus: TextView
     private lateinit var btnToggleAccount: Button
     private lateinit var layoutLoginCard: LinearLayout

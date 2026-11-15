@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="app/src/main/res/drawable/ic_app_logo.xml" alt="SIP Dialer Pro Logo" width="110" height="110" />
+  <img src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='110' height='110' viewBox='0 0 108 108'><circle cx='54' cy='54' r='50' fill='%2300C853'/><path fill='%23FFFFFF' d='M36.2,47.9c4.4,8.6 11.4,15.6 20,20l6.7,-6.7c0.8,-0.8 2,-1.1 3.1,-0.7c3.4,1.1 7.1,1.7 10.9,1.7c1.7,0 3,1.3 3,3v10.5c0,1.7 -1.3,3 -3,3C47.7,78.7 29.3,60.3 29.3,31c0,-1.7 1.3,-3 3,-3h10.5c1.7,0 3,1.3 3,3c0,3.8 0.6,7.5 1.7,10.9c0.3,1.1 0.1,2.3 -0.7,3.1L36.2,47.9z'/></svg>" alt="SIP Dialer Pro Logo" width="110" height="110" />
 
   <h1>📞 SIP Dialer Pro</h1>
 
